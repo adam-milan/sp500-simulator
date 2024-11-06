@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SP500 投資模擬器</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.1.12/Recharts.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.375rem;
+        }
+        .btn-primary {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            width: 100%;
+            margin: 1rem 0;
+            font-weight: bold;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .btn-primary:disabled {
+            background-color: #93c5fd;
+            cursor: not-allowed;
+        }
+        .stats-card {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+        .alert {
+            background-color: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
+
+        function App() {
+            const [inputs, setInputs] = useState({
+                initialInvestment: 100000,
+                monthlyContribution: 5000,
+                years: 33,
+                simulations: 1000,
+                expectedReturn: 10,
+                volatility: 15,
+            });
+
+            const [results, setResults] = useState(null);
+            const [isCalculating, setIsCalculating] = useState(false);
+
+            const calculateMonteCarlo = () => {
+                setIsCalculating(true);
+                const { initialInvestment, monthlyContribution, years, simulations, expectedReturn, volatility } = inputs;
+                const months = years * 12;
+                const monthlyReturn = expectedReturn / 100 / 12;
+                const monthlyVolatility = volatility / 100 / Math.sqrt(12);
+
+                setTimeout(() => {
+                    try {
+                        const allPortfolios = Array(simulations).fill(0).map(() => {
+                            const monthlyValues = [initialInvestment];
+                            let currentValue = initialInvestment;
+
+                            for (let month = 0; month < months; month++) {
+                                const u1 = Math.random();
+                                const u2 = Math.random();
+                                const randomReturn = Math.sqrt(-2.0 * Math.log(u1)) * 
+                                                   Math.cos(2.0 * Math.PI * u2) * 
+                                                   monthlyVolatility + monthlyReturn;
+                                
+                                currentValue = currentValue * (1 + randomReturn) + monthlyContribution;
+                                monthlyValues.push(currentValue);
+                            }
+                            return monthlyValues;
+                        });
+
+                        const timeSeriesData = Array(months + 1).fill(0).map((_, monthIndex) => {
+                            const monthValues = allPortfolios.map(portfolio => portfolio[monthIndex]);
+                            monthValues.sort((a, b) => a - b);
+                            
+                            return {
+                                month: monthIndex,
+                                conservative: monthValues[Math.floor(0.05 * monthValues.length)],
+                                median: monthValues[Math.floor(0.5 * monthValues.length)],
+                                optimistic: monthValues[Math.floor(0.95 * monthValues.length)],
+                                totalInvested: initialInvestment + (monthlyContribution * monthIndex)
+                            };
+                        });
+
+                        const finalValues = allPortfolios.map(portfolio => portfolio[portfolio.length - 1]);
+                        finalValues.sort((a, b) => a - b);
+
+                        setResults({
+                            timeSeriesData,
+                            stats: {
+                                min: finalValues[Math.floor(0.05 * finalValues.length)],
+                                median: finalValues[Math.floor(0.5 * finalValues.length)],
+                                max: finalValues[Math.floor(0.95 * finalValues.length)],
+                            }
+                        });
+                    } catch (error) {
+                        console.error("Simulation error:", error);
+                    }
+                    setIsCalculating(false);
+                }, 0);
+            };
+
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('zh-TW', {
+                    style: 'currency',
+                    currency: 'TWD',
+                    maximumFractionDigits: 0
+                }).format(value);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 space-y-6">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h1 className="text-3xl font-bold text-center mb-6">SP500 長期投資模擬器</h1>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">初始投資金額</label>
+                                <input
+                                    type="number"
+                                    value={inputs.initialInvestment}
+                                    onChange={e => setInputs(prev => ({
+                                        ...prev,
+                                        initialInvestment: parseFloat(e.target.value) || 0
+                                    }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">每月投入金額</label>
+                                <input
+                                    type="number"
+                                    value={inputs.monthlyContribution}
+                                    onChange={e => setInputs(prev => ({
+                                        ...prev,
+                                        monthlyContribution: parseFloat(e.target.value) || 0
+                                    }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">投資年限</label>
+                                <input
+                                    type="number"
+                                    value={inputs.years}
+                                    onChange={e => setInputs(prev => ({
+                                        ...prev,
+                                        years: parseFloat(e.target.value) || 0
+                                    }))}
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            className="btn-primary"
+                            onClick={calculateMonteCarlo}
+                            disabled={isCalculating}
+                        >
+                            {isCalculating ? '計算中...' : '執行模擬'}
+                        </button>
+
+                        {results && (
+                            <div className="mt-6">
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                    <div className="stats-card bg-gray-50">
+                                        <div className="text-sm font-medium text-gray-500">總投入金額</div>
+                                        <div className="text-xl font-bold">
+                                            {formatCurrency(inputs.initialInvestment + (inputs.monthlyContribution * 12 * inputs.years))}
+                                        </div>
+                                    </div>
+                                    <div className="stats-card bg-red-50">
+                                        <div className="text-sm font-medium text-gray-500">保守估計 (5%)</div>
+                                        <div className="text-xl font-bold">{formatCurrency(results.stats.min)}</div>
+                                    </div>
+                                    <div className="stats-card bg-blue-50">
+                                        <div className="text-sm font-medium text-gray-500">中位數</div>
+                                        <div className="text-xl font-bold">{formatCurrency(results.stats.median)}</div>
+                                    </div>
+                                    <div className="stats-card bg-green-50">
+                                        <div className="text-sm font-medium text-gray-500">樂觀估計 (95%)</div>
+                                        <div className="text-xl font-bold">{formatCurrency(results.stats.max)}</div>
+                                    </div>
+                                </div>
+
+                                <div className="chart-container">
+                                    <ResponsiveContainer>
+                                        <LineChart data={results.timeSeriesData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis 
+                                                dataKey="month"
+                                                tickFormatter={(value) => `${Math.floor(value/12)}年`}
+                                            />
+                                            <YAxis 
+                                                tickFormatter={(value) => `${(value/1000000).toFixed(1)}M`}
+                                            />
+                                            <Tooltip 
+                                                formatter={(value) => formatCurrency(value)}
+                                                labelFormatter={(value) => `第 ${Math.floor(value/12)} 年 ${value%12} 月`}
+                                            />
+                                            <Line 
+                                                type="monotone"
+                                                dataKey="optimistic"
+                                                stroke="#10B981"
+                                                name="樂觀估計"
+                                                dot={false}
+                                            />
+                                            <Line 
+                                                type="monotone"
+                                                dataKey="median"
+                                                stroke="#3B82F6"
+                                                name="中位數"
+                                                dot={false}
+                                            />
+                                            <Line 
+                                                type="monotone"
+                                                dataKey="conservative"
+                                                stroke="#EF4444"
+                                                name="保守估計"
+                                                dot={false}
+                                            />
+                                            <Line 
+                                                type="monotone"
+                                                dataKey="totalInvested"
+                                                stroke="#6B7280"
+                                                name="總投入金額"
+                                                strokeDasharray="5 5"
+                                                dot={false}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="alert">
+                                    <p className="text-sm text-blue-700">
+                                        此模擬基於歷史數據和統計假設，僅供參考。實際投資結果可能因市場條件、通貨膨脹、稅收等因素而有顯著差異。
+                                        建議在做出投資決策前諮詢專業理財顧問。
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
